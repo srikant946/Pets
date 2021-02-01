@@ -15,6 +15,8 @@
  */
 package com.example.android.pets;
 
+import android.content.ContentValues;
+import android.database.sqlite.SQLiteDatabase;
 import android.os.Bundle;
 import android.support.v4.app.NavUtils;
 import android.support.v7.app.AppCompatActivity;
@@ -26,6 +28,12 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.Spinner;
+import android.widget.Toast;
+
+// The PetEntry class would be inherited over here
+import com.example.android.pets.data.PetContract.PetEntry;
+import com.example.android.pets.data.PetDbHelper;
+
 
 /**
  * Allows user to create a new pet or edit an existing one.
@@ -48,7 +56,18 @@ public class EditorActivity extends AppCompatActivity {
      * Gender of the pet. The possible values are:
      * 0 for unknown gender, 1 for male, 2 for female.
      */
-    private int mGender = 0;
+     // private int mGender = 0;   // Used when we were simply assigning values and not using a Contract Class
+
+    /**
+     *  Gender of the pet. The possible valid values are in the PetContract.java file:
+     *  {@link PetEntry#GENDER_UNKNOWN}, {@link PetEntry#GENDER_MALE}, or
+     *  {@link PetEntry#GENDER_FEMALE}.
+     *
+     */
+    private int mGender = PetEntry.GENDER_UNKNOWN;
+
+    /** Database helper that will provide us access to the database */
+    private PetDbHelper mDbHelper;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,10 +75,15 @@ public class EditorActivity extends AppCompatActivity {
         setContentView(R.layout.activity_editor);
 
         // Find all relevant views that we will need to read user input from
+        // Referencing of the EditText Fields has been done here
         mNameEditText = (EditText) findViewById(R.id.edit_pet_name);
         mBreedEditText = (EditText) findViewById(R.id.edit_pet_breed);
         mWeightEditText = (EditText) findViewById(R.id.edit_pet_weight);
         mGenderSpinner = (Spinner) findViewById(R.id.spinner_gender);
+
+        // To access our database, we instantiate our subclass of SQLiteOpenHelper
+        // and pass the context, which is the current activity.
+        mDbHelper = new PetDbHelper(this);
 
         setupSpinner();
     }
@@ -67,7 +91,8 @@ public class EditorActivity extends AppCompatActivity {
     /**
      * Setup the dropdown spinner that allows the user to select the gender of the pet.
      */
-    private void setupSpinner() {
+    private void setupSpinner()
+    {
         // Create adapter for spinner. The list options are from the String array it will use
         // the spinner will use the default layout
         ArrayAdapter genderSpinnerAdapter = ArrayAdapter.createFromResource(this,
@@ -85,22 +110,76 @@ public class EditorActivity extends AppCompatActivity {
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 String selection = (String) parent.getItemAtPosition(position);
                 if (!TextUtils.isEmpty(selection)) {
-                    if (selection.equals(getString(R.string.gender_male))) {
-                        mGender = 1; // Male
+                    if (selection.equals(getString(R.string.gender_male)))
+                    {
+                        // Again, on creation of a Contract Class, we would assign the Constant defined over there in this file instead of hardcoded values like 0/1/2
+                        mGender = PetEntry.GENDER_MALE; // Male
                     } else if (selection.equals(getString(R.string.gender_female))) {
-                        mGender = 2; // Female
+                        mGender = PetEntry.GENDER_FEMALE; // Female
                     } else {
-                        mGender = 0; // Unknown
+                        mGender = PetEntry.GENDER_UNKNOWN; // Unknown
                     }
                 }
             }
 
-            // Because AdapterView is an abstract class, onNothingSelected must be defined
+            // Because AdapterView is an abstract class, onNothingSelected must be
+
             @Override
+            // Earlier, before the Contract Inclusion, on selecting nothing we would assign the value of 0
+            // Now, we would assign a Constant that is defined in the PetContract.java File.
+            /*
             public void onNothingSelected(AdapterView<?> parent) {
-                mGender = 0; // Unknown
+               mGender = 0; // Unknown
             }
+            */
+
+            public void onNothingSelected(AdapterView<?> parent)
+            {
+                mGender = PetEntry.GENDER_UNKNOWN; // Unknown
+            }
+
         });
+    }
+
+    // The user would input the pet data and that would get saved to the Database
+    private void insertPet()
+    {
+        // Now, here we first get the database where we want to add up data in..
+        // Then, we would locate all the EditText fields and get their values and store them in a string
+        // Similarly for other kinds of data entry, we would do the parsing and then add it to our ContentValues object.
+        // Then that Content Value object would be inserted in our Database and accordingly the Toast message would be returned.
+
+        // Gets the database in write mode
+        SQLiteDatabase db = mDbHelper.getWritableDatabase();
+
+        // trim() added just to remove the leading/trailing whitespaces in case the user has added them by mistake
+        String nameString = mNameEditText.getText().toString().trim();
+        String breedString = mBreedEditText.getText().toString().trim();
+        String weightString = mWeightEditText.getText().toString().trim();
+        int weight = Integer.parseInt(weightString);  // Since weight is to stored as an integer, we would need to parse the String data input into Integer
+
+        // Create a ContentValues object where column names are the keys,
+        // and Toto's pet attributes are the values.
+        ContentValues values = new ContentValues();
+        values.put(PetEntry.COLUMN_PET_NAME, nameString);
+        values.put(PetEntry.COLUMN_PET_BREED, breedString);
+        values.put(PetEntry.COLUMN_PET_GENDER, mGender);
+        values.put(PetEntry.COLUMN_PET_WEIGHT, weight);
+
+        // Insert a new row for pet in the database, returning the ID of that new row.
+        long newRowId = db.insert(PetEntry.TABLE_NAME, null, values);
+
+        // Show a toast message depending on whether or not the insertion was successful
+        if (newRowId == -1)
+        {
+            // If the row ID is -1, then there was an error with insertion.
+            Toast.makeText(this, "Error with saving pet", Toast.LENGTH_SHORT).show();
+        }
+        else
+        {
+            // Otherwise, the insertion was successful and we can display a toast with the row ID.
+            Toast.makeText(this, "Pet saved with row id: " + newRowId, Toast.LENGTH_SHORT).show();
+        }
     }
 
     @Override
@@ -117,7 +196,11 @@ public class EditorActivity extends AppCompatActivity {
         switch (item.getItemId()) {
             // Respond to a click on the "Save" menu option
             case R.id.action_save:
-                // Do nothing for now
+                // Save pet to database
+                insertPet();
+
+                // Exit the Editor Activity and return us back to the Catalog Activity
+                finish();
                 return true;
             // Respond to a click on the "Delete" menu option
             case R.id.action_delete:
